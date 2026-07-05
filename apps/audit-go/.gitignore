@@ -1,0 +1,4 @@
+# Compiled binaries
+/audit
+/publish
+*.exe
