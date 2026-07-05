@@ -1,15 +1,15 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { run, workflow } from '@repo/db';
+import type { Database } from '@repo/db';
 import { DATABASE_CONNECTION } from '../database/database-coonection';
 import { EventBusService } from '../events/event-bus.service';
 import { advanceStatus, RunStatus } from './run-state-machine';
-import { run, workflow } from './schema';
 
 @Injectable()
 export class RunsService {
   constructor(
-    @Inject(DATABASE_CONNECTION) private readonly db: NodePgDatabase<any>,
+    @Inject(DATABASE_CONNECTION) private readonly db: Database,
     private readonly events: EventBusService,
   ) {}
 
