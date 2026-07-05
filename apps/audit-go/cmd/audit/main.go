@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"audit-go/internal/consumer"
-	"audit-go/internal/consumer/kafkago"
+	"audit-go/internal/consumer/factory"
 	"audit-go/internal/pipeline"
 	"audit-go/internal/store"
 )
@@ -22,6 +22,7 @@ func main() {
 	dsn := flag.String("database-url", "", "postgres dsn (falls back to DATABASE_URL)")
 	snapshotEvery := flag.Duration("snapshot-every", 5*time.Second, "count snapshot interval")
 	fromBeginning := flag.Bool("from-beginning", false, "consume from oldest offset")
+	lib := flag.String("lib", "kafka-go", "kafka client library: kafka-go | sarama")
 	flag.Parse()
 
 	if *dsn == "" {
@@ -40,7 +41,10 @@ func main() {
 		GroupID:       *group,
 		FromBeginning: *fromBeginning,
 	}
-	c := kafkago.New(cfg)
+	c, err := factory.New(*lib, cfg)
+	if err != nil {
+		log.Fatalf("consumer: %v", err)
+	}
 	defer c.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -49,7 +53,7 @@ func main() {
 	pipe := pipeline.New(st, *snapshotEvery)
 	pipe.Start(ctx)
 
-	log.Printf("audit-go consuming lib=kafka-go topic=%s group=%s", *topic, *group)
+	log.Printf("audit-go consuming lib=%s topic=%s group=%s", *lib, *topic, *group)
 	if err := c.Run(ctx, pipe.Handle); err != nil {
 		log.Printf("consumer stopped: %v", err)
 	}
