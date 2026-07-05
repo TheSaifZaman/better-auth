@@ -11,6 +11,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { buildAuthOptions } from './auth/auth-options';
 import { EventsModule } from './events/events.module';
 import { RunsModule } from './runs/runs.module';
+import { AuthEventsHook } from './auth/auth-events.hook';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { RunsModule } from './runs/runs.module';
   ],
   controllers: [],
   providers: [
+    AuthEventsHook,
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
