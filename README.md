@@ -1,159 +1,95 @@
-# Turborepo starter
+# better-auth
 
-This Turborepo starter is maintained by the Turborepo core team.
+A Turborepo monorepo pairing a **better-auth authentication stack** (NestJS API + Next.js frontend) with a **RabbitMQ-vs-Kafka dual-broker event pipeline** — a hands-on exercise in the two messaging paradigms.
 
-## Using this example
+When a workflow run advances (or a user signs up), the backend publishes the **same event to two consumers**:
 
-Run the following command:
+- a **RabbitMQ** consumer (`apps/notifier`) — *smart broker*: push, per-message ack, routing keys, one requeue then DLQ, **ephemeral** (once acked, gone).
+- a **Kafka** consumer (`apps/audit-go`) — *dumb replayable log*: pull, offset-based, partitions, consumer groups, **replayable** (rebuild state from offset 0).
 
-```sh
-npx create-turbo@latest
+That contrast is the lesson: the Go service can `--replay` the completed-run counts from offset 0; the drained Rabbit queue cannot.
+
+## Layout
+
+```
+apps/
+  backend/     NestJS API — better-auth + the run/workflow domain + dual-publish EventBus
+  web/         Next.js frontend — sign-in / sign-up / password reset (better-auth client)
+  notifier/    NestJS RabbitMQ microservice — consumes events, writes notification rows
+  audit-go/    Go Kafka consumer — kafka-go | sarama, audit_log + counts + replay
+packages/
+  db/          @repo/db — shared Drizzle schema, connection factory, migrations
+  eslint-config, typescript-config
+docker-compose.yml   RabbitMQ + Kafka (KRaft) + an isolated demo Postgres (:5433)
+scripts/demo.sh      one-command end-to-end demo of both pipelines
 ```
 
-## What's inside?
+## Prerequisites
 
-This Turborepo includes the following packages/apps:
+- Node ≥ 18, **pnpm 9** (`corepack enable`)
+- Docker + Docker Compose (for the brokers and demo Postgres)
+- A Postgres for local dev (the demo uses its own on port 5433)
+- Go is **not** required on the host — `apps/audit-go` builds and runs via the `golang:1.25` container
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Setup
 
 ```sh
-cd my-turborepo
-turbo build
+pnpm install
+
+# backend env — see apps/backend/README.md for the full list
+#   DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, TRUSTED_ORIGINS, SMTP_*, RABBITMQ_URL, KAFKA_BROKERS
+
+# apply the schema to your dev database
+DATABASE_URL=postgres://.../yourdb pnpm --filter @repo/db exec drizzle-kit migrate
 ```
 
-Without global `turbo`, use your package manager:
+## Run the auth app
 
 ```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+pnpm --filter @repo/db build     # backend/notifier consume @repo/db as a built package
+pnpm --filter backend dev        # NestJS API on :3000
+pnpm --filter web dev            # Next.js frontend on :3001
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+## Run the dual-broker demo
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+One command brings up the brokers + an **isolated** demo Postgres (`:5433`, your dev DB is never touched), starts all three services, drives `/runs/:id/advance` plus a sign-up, and prints both pipelines and a Kafka replay:
 
 ```sh
-turbo build --filter=docs
+./scripts/demo.sh
 ```
 
-Without global `turbo`:
+You'll see `notification` rows (RabbitMQ), `audit_log` + `workflow_run_counts` (Kafka), and the counts rebuilt from offset 0.
+
+### Poke at it manually
 
 ```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+docker compose up -d
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic run-events --partitions 3 --replication-factor 1
+
+# create + advance a run
+curl -X POST localhost:3000/runs -H 'content-type: application/json' -d '{"workflow":"demo"}'
+curl -X POST localhost:3000/runs/<id>/advance
+
+# rebuild the Kafka counts from offset 0 — the move RabbitMQ can't make
+docker run --rm --network better-auth_default -v "$PWD/apps/audit-go":/src -w /src \
+  golang:1.25 go run ./cmd/audit --replay --lib sarama --brokers kafka:29092
 ```
 
-### Develop
+Broker UIs: RabbitMQ management at http://localhost:15673 (guest/guest), Kafka on `localhost:9092`.
 
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+## Common commands
 
 ```sh
-cd my-turborepo
-turbo dev
+pnpm --filter backend test        # NestJS unit tests
+pnpm --filter notifier test
+docker run --rm -v "$PWD/apps/audit-go":/src -w /src golang:1.25 go test -race ./...
+pnpm --filter @repo/db exec drizzle-kit generate   # new migration after schema edits
 ```
 
-Without global `turbo`, use your package manager:
+## The details live in each app
 
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- [`apps/backend`](apps/backend/README.md) — the producer + auth
+- [`apps/notifier`](apps/notifier/README.md) — the RabbitMQ consumer
+- [`apps/audit-go`](apps/audit-go/README.md) — the Kafka consumer
