@@ -1,102 +1,103 @@
-import Image, { type ImageProps } from "next/image";
-import { Button } from "@repo/ui/button";
-import styles from "./page.module.css";
+"use client";
 
-type Props = Omit<ImageProps, "src"> & {
-  srcLight: string;
-  srcDark: string;
-};
+import Link from "next/link";
+import { authClient } from "../lib/auth-client";
+import { TwoFactorSetup } from "../components/two-factor-setup";
 
-const ThemeImage = (props: Props) => {
-  const { srcLight, srcDark, ...rest } = props;
-
-  return (
-    <>
-      <Image {...rest} src={srcLight} className="imgLight" />
-      <Image {...rest} src={srcDark} className="imgDark" />
-    </>
-  );
-};
+const mono = "font-[family-name:var(--font-geist-mono)]";
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <ThemeImage
-          className={styles.logo}
-          srcLight="turborepo-dark.svg"
-          srcDark="turborepo-light.svg"
-          alt="Turborepo logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>apps/web/app/page.tsx</code>
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    const { data: session, isPending: isLoading, refetch } = authClient.useSession();
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new/clone?demo-description=Learn+to+implement+a+monorepo+with+a+two+Next.js+sites+that+has+installed+three+local+packages.&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F4K8ZISWAzJ8X1504ca0zmC%2F0b21a1c6246add355e55816278ef54bc%2FBasic.png&demo-title=Monorepo+with+Turborepo&demo-url=https%3A%2F%2Fexamples-basic-web.vercel.sh%2F&from=templates&project-name=Monorepo+with+Turborepo&repository-name=monorepo-turborepo&repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fturborepo%2Ftree%2Fmain%2Fexamples%2Fbasic&root-directory=apps%2Fdocs&skippable-integrations=1&teamSlug=vercel&utm_source=create-turbo"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://turborepo.dev/docs?utm_source"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
-        </div>
-        <Button appName="web" className={styles.secondary}>
-          Open alert
-        </Button>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://vercel.com/templates?search=turborepo&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://turborepo.dev?utm_source=create-turbo"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to turborepo.dev →
-        </a>
-      </footer>
-    </div>
-  );
+    if (isLoading) {
+        return (
+            <main className="grid min-h-screen place-items-center bg-slate-50">
+                <p className={`${mono} text-sm uppercase tracking-[0.25em] text-slate-400`}>
+                    Loading<span className="caret">▍</span>
+                </p>
+            </main>
+        );
+    }
+
+    if (session) {
+        const user = session.user as typeof session.user & {
+            twoFactorEnabled?: boolean | null;
+        };
+        return (
+            <main className="grid min-h-screen place-items-center bg-slate-50 px-4 py-12">
+                <div className="w-full max-w-md">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5">
+                        <p className={`${mono} text-[11px] uppercase tracking-[0.25em] text-emerald-600`}>
+                            Session active<span className="caret">▍</span>
+                        </p>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
+                            Welcome, {user.name}
+                        </h1>
+                        <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+                            <span>{user.email}</span>
+                            <span
+                                className={`${mono} rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                                    user.emailVerified
+                                        ? "bg-emerald-50 text-emerald-600"
+                                        : "bg-amber-50 text-amber-600"
+                                }`}
+                            >
+                                {user.emailVerified ? "Verified" : "Unverified"}
+                            </span>
+                        </div>
+
+                        <div className="mt-6">
+                            <TwoFactorSetup
+                                enabled={!!user.twoFactorEnabled}
+                                onChange={() => refetch()}
+                            />
+                        </div>
+
+                        <button
+                            onClick={() => authClient.signOut()}
+                            className="mt-6 inline-flex w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                        >
+                            Sign out
+                        </button>
+                    </div>
+                </div>
+            </main>
+        );
+    }
+
+    return (
+        <main className="grid min-h-screen place-items-center bg-slate-50 px-4 py-12">
+            <div className="w-full max-w-md text-center">
+                <p className={`${mono} text-[11px] uppercase tracking-[0.3em] text-indigo-600`}>
+                    Better&#8209;Auth · Next.js<span className="caret">▍</span>
+                </p>
+                <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900">Welcome</h1>
+                <p className="mx-auto mt-3 max-w-sm text-base text-slate-500">
+                    Sign in to your account, or create a new one to get started.
+                </p>
+
+                <div
+                    className={`${mono} mx-auto mt-8 max-w-xs rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-xs text-slate-500 shadow-sm`}
+                >
+                    <span className="text-slate-400">$</span> auth status:{" "}
+                    <span className="text-amber-600">awaiting sign&#8209;in</span>
+                </div>
+
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                    <Link
+                        href="/sign-in"
+                        className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 active:scale-[0.99]"
+                    >
+                        Sign in
+                    </Link>
+                    <Link
+                        href="/sign-up"
+                        className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                    >
+                        Create account
+                    </Link>
+                </div>
+            </div>
+        </main>
+    );
 }

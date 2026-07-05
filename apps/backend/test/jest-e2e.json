@@ -1,0 +1,17 @@
+{
+  "moduleFileExtensions": ["js", "mjs", "cjs", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", { "tsconfig": "test/tsconfig.e2e.json" }],
+    "^.+\\.m?js$": [
+      "babel-jest",
+      {
+        "presets": [["@babel/preset-env", { "targets": { "node": "current" } }]],
+        "plugins": ["babel-plugin-transform-import-meta"]
+      }
+    ]
+  },
+  "transformIgnorePatterns": []
+}

@@ -6,6 +6,7 @@
         "name": "next"
       }
     ],
+    "declaration": false,
     "strictNullChecks": true
   },
   "include": [
